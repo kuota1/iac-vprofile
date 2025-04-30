@@ -1,7 +1,7 @@
 name: "Vprofile IAC"
 
 # Este workflow solo se activa en cambios dentro de terraform/
-# Hace init, fmt, validate, plan
+# Hace init, fmt, validate,  plan
 # NO aplica cambios aún — se agregará apply en otro workflow o al hacer merge a main
 
 on:
