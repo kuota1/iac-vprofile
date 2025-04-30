@@ -1,0 +1,81 @@
+name: "Vprofile IAC"
+
+# Este workflow solo se activa en cambios dentro de terraform/
+# Hace init, fmt, validate, plan
+# NO aplica cambios aún — se agregará apply en otro workflow o al hacer merge a main
+
+on:
+  push:
+    branches:
+      - main
+      - stage
+    paths:
+      - terraform/**
+  pull_request:
+    branches:
+      - main
+    paths:
+      - terraform/**
+
+env:
+  # Credenciales para desplegar a AWS (deben estar en GitHub Secrets)
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  
+  # Bucket de S3 donde se guarda el estado remoto de Terraform
+  BUCKET_TF_STATE: ${{ secrets.BUCKET_TF_STATE }}
+  
+  # Región y nombre del cluster EKS
+  AWS_REGION: us-east-1
+  EKS_CLUSTER: vprofile-eks
+
+jobs:
+  terraform:
+    name: "Apply terraform code changes"
+    runs-on: ubuntu-latest
+
+    defaults:
+      run: 
+        shell: bash
+        working-directory: ./terraform  # Todas las acciones ocurren dentro de /terraform
+
+    steps:
+      - name: Checkout source code
+        # Descarga el código del repositorio en el runner de GitHub Actions
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform with specified version on the runner
+        uses: hashicorp/setup-terraform@v3
+        # Si se desea fijar una versión específica:
+        # with:
+        #   terraform_version: 1.6.3
+        # Sin versión: usará la más reciente disponible (recomendado en desarrollo)
+
+      - name: Terraform init
+        id: init
+        # Inicializa el backend remoto usando el bucket S3 especificado en los secrets
+        # Este paso debe completarse antes de plan/apply
+        run: terraform init -backend-config="bucket=$BUCKET_TF_STATE"
+
+      - name: Terraform format
+        id: fmt  
+        # Verifica que el código tenga el formato correcto (no modifica)
+        # Si hay errores de formato, el job fallará
+        run: terraform fmt -check
+
+      - name: Terraform validate
+        id: validate
+        # Revisa sintaxis y estructura del código Terraform sin aplicar cambios
+        run: terraform validate
+
+      - name: Terraform plan
+        id: plan
+        # Simula los cambios sin aplicar (dry-run)
+        # Se guarda el resultado en 'planfile'
+        run: terraform plan -no-color -input=false -out planfile
+        continue-on-error: true  # Permite continuar aunque el plan falle (lo evaluamos en el siguiente paso)
+
+      - name: Terraform plan status
+        # Si el plan falló, este paso forza el error para detener el pipeline
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
