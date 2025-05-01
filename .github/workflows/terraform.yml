@@ -79,3 +79,25 @@ jobs:
         # Si el plan falló, este paso forza el error para detener el pipeline
         if: steps.plan.outcome == 'failure'
         run: exit 1
+
+      - name: Terraform apply
+        id: apple
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform apply --auto-approve -input=false -parallelism=1 planfile
+      
+      - name: Configure AWS credentials
+        uses: aws-action/configure-aws-credentials@v1
+        with:
+          aws-access-key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Get Kube config file
+        id: getconfig
+        if: steps.apple.outcome == 'success'
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER }}
+
+      - name: Install Ingress controller 
+        if: steps.apple.outcome == 'success' && steps.getconfig.outcome == 'success'
+        run: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.1.3/deploy/static/provider/aws/deploy.yaml
+
